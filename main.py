@@ -1,46 +1,49 @@
 import hashlib
+import requests
 
+# Function to calculate SHA256 hash for a block
+def sha256_hash(block):
+    return hashlib.sha256(block).digest()
 
-def calculate_h0(file_path):
-    h0 = hashlib.sha256()
+# Function to calculate the value h0 of a file
+def calculate_h0(file_url):
+    h0 = None
+    response = requests.get(file_url, stream=True)
+    block_size = 1024  # Size of each block is 1KB
+    for block in response.iter_content(block_size):
+        h = hashlib.sha256()  # Initialize a SHA256 object
+        h.update(block)       # Update hash value with the content of the block
+        h.update(h0 or b'')   # Add the previous hash value (or empty if it's the first block)
+        h0 = h.digest()       # Save the new hash value
+    return h0
 
-    with open(file_path, 'rb') as file:
-        # Read the first block
-        block = file.read(1024)
-        h0.update(block)
+# Function to validate the authenticity of each block as it is received
+def validate_blocks(file_url, h0):
+    response = requests.get(file_url, stream=True)
+    block_size = 1024
+    block_number = 0
+    for block in response.iter_content(block_size):
+        h = hashlib.sha256()
+        h.update(block)
+        h.update(h0 if block_number == 0 else blocks_hashes[block_number - 1])  # Add the previous hash value
+        block_hash = h.digest()
+        if block_number >= len(blocks_hashes):
+            blocks_hashes.append(block_hash)
+        if block_hash != blocks_hashes[block_number]:
+            print(f"Block {block_number} is not valid!")  # Print if the block is invalid
+        else:
+            print(f"Block {block_number} is valid!")      # Print if the block is valid
+        block_number += 1
 
-        # Iterate through the rest of the blocks
-        while len(block) == 1024:
-            block = file.read(1024)
-            h0.update(block)
+# Dropbox link to the video file needing authentication
+file_url = 'https://www.dropbox.com/s/a9lr8g1cj3o4dcn/birthday.mp4?dl=1'
 
-    return h0.digest()
-
-
-def verify_blocks(file_path, h0):
-    with open(file_path, 'rb') as file:
-        # Read the first block
-        block = file.read(1024)
-        current_hash = hashlib.sha256(block).digest()
-
-        # Verify each block
-        while len(block) == 1024:
-            block = file.read(1024)
-            expected_hash = hashlib.sha256(current_hash + block).digest()
-            if expected_hash != h0:
-                return False
-            current_hash = hashlib.sha256(block).digest()
-
-    return True
-
-
-# Example usage
-file_path = 'video.mp4'
-h0 = calculate_h0(file_path)
+# Calculate the value h0 of the file
+h0 = calculate_h0(file_url)
 print("h0:", h0.hex())
 
-# Verify blocks
-if verify_blocks(file_path, h0):
-    print("All blocks verified successfully!")
-else:
-    print("Block verification failed!")
+# Store the hash values of each block
+blocks_hashes = [h0]
+
+# Validate each block as it is received
+validate_blocks(file_url, h0)
